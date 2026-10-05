@@ -31,22 +31,25 @@ ROMAN_TO_NUM = {
     "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10
 }
 
-PORTUGUESE_PRONOUNS_AND_SUFFIXES = {
-    "se", "me", "te", "nos", "vos", "o", "a", "os", "as", "lhe", "lhes",
-    "lo", "la", "los", "las", "no", "na", "nos", "nas"
+COMMON_SYLLABLE_SUFFIXES = {
+    "ing", "ings", "ed", "er", "ers", "est", "tion", "tions", "sion", "sions",
+    "tism", "ous", "lar", "ment", "ments", "able", "ible", "ity", "ities",
+    "ive", "ives", "al", "ally", "ence", "ance", "ic", "ical", "less", "ness",
+    "ful", "ize", "ized", "ise", "ised", "ism", "ist", "ists", "logy", "phy",
+    "ry", "ty", "ly", "ant", "ent", "ate", "ated", "ator", "atory", "pion",
+    "pions", "cally", "fic", "fically"
 }
 
 VALID_COMPOUND_WORDS = {
     "point", "aware", "driven", "based", "level", "order", "state", "rate",
     "free", "bound", "scale", "wise", "width", "time", "domain", "end",
     "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
-    "ten", "first", "second", "third", "long", "short", "wide", "side", "line",
-    "type", "fold", "page", "step", "established", "lei", "padrao", "padroes"
+    "ten", "first", "second", "third", "can", "catch", "as", "known", "built",
+    "long", "short", "wide", "side", "line", "type", "fold", "page", "step", "established"
 }
 
 NUMBER_PREFIXES = {
-    "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "well", "all",
-    "ex", "vice", "pos", "pre", "pro", "sub", "super", "anti"
+    "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "well", "all"
 }
 
 PUNCTUATION_ENTITIES = {
@@ -57,8 +60,7 @@ PUNCTUATION_ENTITIES = {
 STANDALONE_WORDS = {
     "sich", "und", "der", "die", "das", "ein", "eine", "mit", "von", "zu",
     "auf", "im", "in", "den", "dem", "des", "nicht", "auch", "als", "an",
-    "the", "and", "a", "an", "of", "in", "to", "for", "with", "on", "at",
-    "de", "do", "da", "dos", "das", "em", "um", "uma", "com", "por", "para", "ou", "e"
+    "the", "and", "a", "an", "of", "in", "to", "for", "with", "on", "at"
 }
 
 SPEAKER_LABEL_REGEX = re.compile(r'^[A-Z0-9]{1,10}\s*:\s+')
@@ -92,81 +94,64 @@ def clean_to_hex_entities(text):
     return valid_xml.sub('', text)
 
 def fix_hyphenated_words(text):
-    """
-    Distinguishes soft line-breaking hyphens from enclitics, compound words,
-    and suspended hyphens (e.g., 'inter- and', 'intra- and').
-    """
     if not text:
         return ""
-
-    # Fix accidental fused suspended prefixes
-    text = re.sub(r'\b(inter|intra|pre|post|macro|micro)and\b', r'\1- and', text, flags=re.IGNORECASE)
-    text = re.sub(r'\b(inter|intra|pre|post|macro|micro)or\b', r'\1- or', text, flags=re.IGNORECASE)
 
     text = text.replace('\u00ad', '').replace('\xad', '')
 
     def line_break_replacer(match):
         prefix = match.group(1)
-        sep = match.group(2)
-        suffix = match.group(3)
+        suffix = match.group(2)
         p_low = prefix.lower()
         s_low = suffix.lower()
 
-        # Suspended hyphens followed by conjunctions (e.g., inter- and, micro- or)
-        if s_low in {"and", "or", "to", "und", "e", "ou"}:
-            return f"{prefix}- {suffix}"
-
-        # Preserve genuine hyphenated structures
-        if s_low in PORTUGUESE_PRONOUNS_AND_SUFFIXES or s_low in VALID_COMPOUND_WORDS or p_low in NUMBER_PREFIXES:
+        if p_low in NUMBER_PREFIXES or s_low in VALID_COMPOUND_WORDS:
             return f"{prefix}-{suffix}"
+        
+        return prefix + suffix
 
-        # Otherwise it was split across lines due to justification
-        return f"{prefix}{suffix}"
-
-    # Target hyphen at end of word followed by space/line jump and continuation
-    text = re.sub(r'([a-zA-ZÀ-ÿ]{2,})([-‐‑])\s+([a-zA-ZÀ-ÿ]{2,})', line_break_replacer, text)
+    text = re.sub(r'([a-zA-Z]{2,})[-‐‑]\s+([a-zA-Z]{2,})', line_break_replacer, text)
     return text
 
 def fix_missing_boundary_spaces(text):
     if not text:
         return ""
 
-    text = re.sub(r'([,;])([A-Za-zÀ-ÿ])', r'\1 \2', text)
+    text = re.sub(r'([,;])([A-Za-z])', r'\1 \2', text)
     text = re.sub(r'&#x201C;\s+', '&#x201C;', text)
     text = re.sub(r'\s+&#x201D;', '&#x201D;', text)
-
-    # Clean apostrophe contractions and suffixes without space
-    text = re.sub(r'(&#x2019;|\')\s*(s|t|d|m|re|ve|ll|he|em)\b', r'\1\2', text, flags=re.IGNORECASE)
-
+    text = re.sub(r'&#x2019;\s*s\b', '&#x2019;s', text)
+    text = re.sub(r"'\s*s\b", "'s", text)
     text = re.sub(r'\s*&#x2013;\s*', '&#x2013;', text)
     text = re.sub(r'\s*&#x2014;\s*', '&#x2014;', text)
-    text = re.sub(r'(&#x201D;|"|\))([A-Za-zÀ-ÿ])', r'\1 \2', text)
-    text = re.sub(r'([A-Za-zÀ-ÿ])(&#x201C;|"|\()', r'\1 \2', text)
+    text = re.sub(r'(&#x201D;|"|\))([A-Za-z])', r'\1 \2', text)
+    text = re.sub(r'([A-Za-z])(&#x201C;|"|\()', r'\1 \2', text)
 
     def clean_intra_word_after(match):
         ent = match.group(1)
         suffix = match.group(2)
-        # Never add space after right single quotation mark / apostrophe for word endings
-        if ent in {"&#x2019;", "&#x0027;"}:
-            return f"{ent}{suffix}"
-        if ent in PUNCTUATION_ENTITIES or suffix.lower() in STANDALONE_WORDS:
+        if ent in PUNCTUATION_ENTITIES:
+            return f"{ent} {suffix}"
+        if suffix.lower() in STANDALONE_WORDS:
             return f"{ent} {suffix}"
         if len(suffix) <= 5 and suffix.islower():
             return f"{ent}{suffix}"
         return f"{ent} {suffix}"
 
-    text = re.sub(r'(&#x[0-9A-Fa-f]+;)[ \t]+([a-zA-ZÀ-ÿ]{1,10})', clean_intra_word_after, text)
+    text = re.sub(r'(&#x[0-9A-Fa-f]+;)[ \t]+([a-zA-Z]{1,10})', clean_intra_word_after, text)
 
     def clean_intra_word_before(match):
         prefix = match.group(1)
         ent = match.group(2)
-        if ent in PUNCTUATION_ENTITIES or prefix.lower() in STANDALONE_WORDS:
+        if ent in PUNCTUATION_ENTITIES:
+            return f"{prefix} {ent}"
+        if prefix.lower() in STANDALONE_WORDS:
             return f"{prefix} {ent}"
         if len(prefix) <= 4 and prefix.islower():
             return f"{prefix}{ent}"
         return f"{prefix} {ent}"
 
-    text = re.sub(r'([a-zA-ZÀ-ÿ]{1,10})[ \t]+(&#x[0-9A-Fa-f]+;)', clean_intra_word_before, text)
+    text = re.sub(r'([a-zA-Z]{1,10})[ \t]+(&#x[0-9A-Fa-f]+;)', clean_intra_word_before, text)
     text = re.sub(r'[ \t]{2,}', ' ', text)
     return text
 
@@ -184,16 +169,10 @@ def post_process_clean_xml(xml_str):
     xml_str = re.sub(r'<title>[ \t]+', '<title>', xml_str)
     xml_str = re.sub(r'&#x201C;\s+', '&#x201C;', xml_str)
     xml_str = re.sub(r'\s+&#x201D;', '&#x201D;', xml_str)
-    
-    # Remove erroneous spaces after apostrophe in XML string
-    xml_str = re.sub(r'(&#x2019;|\')\s+(s|t|d|m|re|ve|ll|he|em)\b', r'\1\2', xml_str, flags=re.IGNORECASE)
-    
-    # Fix instances of 'interand' or missing suspended hyphen
-    xml_str = re.sub(r'\b(inter|intra|pre|post|macro|micro)and\b', r'\1- and', xml_str, flags=re.IGNORECASE)
-    xml_str = re.sub(r'\b(inter|intra|pre|post|macro|micro)or\b', r'\1- or', xml_str, flags=re.IGNORECASE)
-
+    xml_str = re.sub(r'&#x2019;\s+s\b', '&#x2019;s', xml_str)
     xml_str = re.sub(r'\s*&#x2013;\s*', '&#x2013;', xml_str)
     xml_str = re.sub(r'\s*&#x2014;\s*', '&#x2014;', xml_str)
+
     xml_str = re.sub(r'<p>\s*</p>', '', xml_str)
     return xml_str
 
@@ -336,13 +315,18 @@ def extract_exact_page_number(page, last_confirmed_page):
     page_dict = page.get_text("dict")
     page_width = page.rect.width
     page_height = page.rect.height
+
     detected_folio = None
 
     for block in page_dict.get("blocks", []):
         if block.get("type") != 0:
             continue
         for line in block.get("lines", []):
-            x0, y0, x1, y1 = line["bbox"]
+            x0 = line["bbox"][0]
+            x1 = line["bbox"][2]
+            y0 = line["bbox"][1]
+            y1 = line["bbox"][3]
+
             is_header_zone = (y0 < 55)
             is_footer_zone = (y1 > page_height - 55)
 
@@ -371,7 +355,10 @@ def extract_exact_page_number(page, last_confirmed_page):
             break
 
     if detected_folio is None:
-        detected_folio = (last_confirmed_page + 1) if last_confirmed_page is not None else (page.number + 1)
+        if last_confirmed_page is not None:
+            detected_folio = last_confirmed_page + 1
+        else:
+            detected_folio = page.number + 1
 
     return detected_folio
 
@@ -399,30 +386,8 @@ def extract_pdf_pages_clean_header(pdf_path, status_callback=None):
         page_height = page.rect.height
         page_blocks = page_dict.get("blocks", [])
 
-        body_lines_x0 = []
-        body_font_sizes = []
-        for b in page_blocks:
-            if b.get("type") != 0:
-                continue
-            for ln in b.get("lines", []):
-                y0, y1 = ln["bbox"][1], ln["bbox"][3]
-                if y0 >= 55 and y1 <= (page_height - 55):
-                    body_lines_x0.append(ln["bbox"][0])
-                    for sp in ln.get("spans", []):
-                        if sp.get("text", "").strip():
-                            body_font_sizes.append(round(sp.get("size", 10.0), 1))
-
-        if body_lines_x0:
-            column_base_x0 = min(body_lines_x0)
-            sorted_x0s = sorted(body_lines_x0)
-            for x in sorted_x0s:
-                if x >= 30:
-                    column_base_x0 = x
-                    break
-        else:
-            column_base_x0 = 50.0
-
-        dominant_page_size = max(set(body_font_sizes), key=body_font_sizes.count) if body_font_sizes else 10.0
+        text_x0s = [b["bbox"][0] for b in page_blocks if b.get("type") == 0 and b.get("lines")]
+        column_base_x0 = min(text_x0s) if text_x0s else 50.0
 
         for block in page_blocks:
             if block.get("type") != 0:
@@ -432,22 +397,15 @@ def extract_pdf_pages_clean_header(pdf_path, status_callback=None):
             if not lines:
                 continue
 
-            line_lefts = [ln["bbox"][0] for ln in lines]
-            avg_line_left = sum(line_lefts) / len(line_lefts)
-            min_line_left = min(line_lefts)
-
-            block_sizes = [s["size"] for ln in lines for s in ln.get("spans", []) if s.get("text", "").strip()]
-            block_avg_size = (sum(block_sizes) / len(block_sizes)) if block_sizes else dominant_page_size
-
-            is_blockquote = (min_line_left - column_base_x0 > 18.0) or \
-                            (avg_line_left - column_base_x0 > 22.0 and block_avg_size < dominant_page_size)
-
             current_spans = []
+            block_x0 = block["bbox"][0]
             base_x0 = lines[0]["bbox"][0]
+            is_blockquote = (block_x0 - column_base_x0) > 14.0
+
             prev_line_y1 = None
             prev_line_height = 12.0
 
-            for line_idx, line in enumerate(lines):
+            for line in lines:
                 y0 = line["bbox"][1]
                 y1 = line["bbox"][3]
                 line_height = y1 - y0
@@ -463,7 +421,7 @@ def extract_pdf_pages_clean_header(pdf_path, status_callback=None):
                     continue
 
                 sizes = [s["size"] for s in line_spans if s.get("text", "").strip()]
-                dominant_size = max(set(sizes), key=sizes.count) if sizes else dominant_page_size
+                dominant_size = max(set(sizes), key=sizes.count) if sizes else 10.0
                 baseline_y = line_spans[0]["origin"][1] if "origin" in line_spans[0] else line["bbox"][3]
 
                 line_x0 = line["bbox"][0]
@@ -484,16 +442,7 @@ def extract_pdf_pages_clean_header(pdf_path, status_callback=None):
                     base_x0 = line_x0
 
                 raw_line_end = "".join([s.get("text", "") for s in line_spans]).rstrip()
-                
-                # Check whether line ends with a hyphen
-                line_ends_with_hyphen = bool(re.search(r'[a-zA-ZÀ-ÿ][-‐‑\xad]$', raw_line_end))
-
-                # Check if the next line starts with a coordinating conjunction like "and" or "or"
-                is_suspended_hyphen = False
-                if line_ends_with_hyphen and (line_idx + 1 < len(lines)):
-                    next_first_txt = "".join([s.get("text", "") for s in lines[line_idx + 1].get("spans", [])]).strip()
-                    if re.match(r'^(and|or|to|und|e|ou)\b', next_first_txt, re.IGNORECASE):
-                        is_suspended_hyphen = True
+                line_ends_with_hyphen = raw_line_end.endswith('-') or raw_line_end.endswith('‐') or raw_line_end.endswith('‑') or raw_line_end.endswith('\xad')
 
                 for s_i, span in enumerate(line_spans):
                     span_copy = dict(span)
@@ -501,12 +450,8 @@ def extract_pdf_pages_clean_header(pdf_path, status_callback=None):
                     if not s_text:
                         continue
 
-                    # Soft line-break hyphen at end of line (strip only if not suspended)
                     if line_ends_with_hyphen and s_i == len(line_spans) - 1:
-                        if not is_suspended_hyphen:
-                            span_copy["text"] = re.sub(r'[-‐‑\xad]\s*$', '', span_copy["text"])
-                        else:
-                            span_copy["text"] = re.sub(r'[-‐‑\xad]\s*$', '-', span_copy["text"])
+                        span_copy["text"] = re.sub(r'[-‐‑\xad]\s*$', '', span_copy["text"])
 
                     s_size = span_copy.get("size", dominant_size)
                     s_origin_y = span_copy.get("origin", (0, baseline_y))[1]
@@ -529,8 +474,7 @@ def extract_pdf_pages_clean_header(pdf_path, status_callback=None):
 
                     current_spans.append(span_copy)
 
-                # Append word spacing if line didn't end with a stripped hyphen
-                if current_spans and (not line_ends_with_hyphen or is_suspended_hyphen):
+                if current_spans and not line_ends_with_hyphen:
                     if not current_spans[-1]["text"].endswith(" "):
                         current_spans.append({"text": " ", "flags": 0, "size": dominant_size, "font": "", "pos_type": "regular"})
 
@@ -827,7 +771,7 @@ def parse_full_pdf(pdf_path, output_xml_path, doi, journal_title, status_callbac
 class UniversalConverterApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("TTBS - XML Conversion Suite")
+        self.title("XML Conversion Suite")
         self.geometry("640x410")
         self.resizable(False, False)
 
@@ -840,7 +784,7 @@ class UniversalConverterApp(tk.Tk):
 
         tk.Label(
             self,
-            text="TTBS XML Conversion Engine",
+            text="XML Conversion Engine",
             font=("Arial", 13, "bold"),
             fg="#0F172A"
         ).pack(pady=(12, 2))
